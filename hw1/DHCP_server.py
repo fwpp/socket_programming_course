@@ -47,6 +47,9 @@ class Server:
         self.inPacket = DHCP_packet()
         self.outPacket = DHCP_packet()
 
+        self.IP_pool = [ int('0xc0a88801', base=16), int('0xc0a88802', base=16 ) ]
+        self.assigned_IP_table = {}   #IP : [MAC, ASSIGNED time]  (expired when exceeding 1 min)
+
         timeMsg = 'server socket created ({})'.format( datetime.now() )
         print(timeMsg)
 
@@ -63,13 +66,17 @@ class Server:
             if self.inPacket.getField('OPTION')[53] == 1:
                 #receive DHCPDISCOVER
                 print('receive DHCPDISCOVER packet from {}'.format(addr))
-                print( data )
+                #print( data )
 
+                if self.checkAvailableIP() == False:
+                    print('There is no available IP')
+                    continue
                 #send DHCPOFFER
                 data = self.DHCPOFFER()
                 print('send DHCPOFFER')
-                print( data )
-                sock.sendto( data, ('255.255.255.255', 68) )
+                #print( data )
+                #sock.sendto( data, ('255.255.255.255', 68) )
+                sock.sendto( data, ('255.255.255.255', addr[1]) )   #for testing multiple client
                 #sock.sendto( data, ('255.255.255.255', 20000) )    #for testing local
 
                 #wait DHCPREQUEST
@@ -82,13 +89,27 @@ class Server:
 
             #receive DHCPREQUEST
             print('receive DHCPREQUEST packet from {}'.format(addr))
-            print(data)
+            #print(data)
 
-            #send DHCPACK
-            data = self.DHCPACK()
-            print('send DHCPACK')
-            print(data)
-            sock.sendto( data, (destIP, 68) )
+            requestedIP = self.inPacket.getField('OPTION')[50]
+            if destIP != '255.255.255.255':
+                FLAGS = 0
+            else:
+                FLAGS = int( '0x8000', base=16 )
+            if self.checkIPAvailable( requestedIP ):
+                #send DHCPACK
+                print('send DHCPACK')
+                data = self.DHCPACK( requestedIP, FLAGS )
+            else:
+                #send DHCPNAK
+                print('send DHCPNAK')
+                data = self.DHCPNAK( FLAGS )
+
+            #print(data)
+            #sock.sendto( data, (destIP, 68) )
+            if destIP != '255.255.255.255':
+                destIP = addr[0]
+            sock.sendto( data, (destIP, addr[1]) )   #for testing multiple client
             #sock.sendto( data, ('255.255.255.255', 20000) )    #for testing local
 
                 
@@ -128,6 +149,8 @@ class Server:
     def DHCPOFFER(self):
         self.outPacket.resetPacket()
 
+        YIADDR = self.IP_pool[0]
+
         packet_field = {
                         'OP' : 2,
                         'HTYPE' : 1,
@@ -137,7 +160,7 @@ class Server:
                         'SECS' : 0,
                         'FLAGS' : int('0x8000', base=16),
                         'CIADDR' : 0,
-                        'YIADDR' : int('0xc0a8881', base=16),
+                        'YIADDR' : YIADDR,
                         'SIADDR' : 0,
                         'GIADDR' : 0,
                         'CHADDR' : self.inPacket.getField('CHADDR'), 
@@ -167,7 +190,7 @@ class Server:
                         0,
                         0,
                         0,
-                        20,
+                        60,
                         54, #DHCP Server
                         4,
                         192,
@@ -176,19 +199,9 @@ class Server:
                         134
                         ]
 
-        index = 0
-        for fieldItem in self.outPacket.fieldList:
-            if fieldItem != 'OPTION':
-                self.outPacket.setField(fieldItem, packet_field[fieldItem], self.outPacket.fieldSize[fieldItem])
-            else:
-                for optionVal in packet_field_option:
-                    self.outPacket.setField('OPTION', optionVal, 1)
+        return self.constructPacket( packet_field, packet_field_option )
 
-        self.outPacket.setField('OPTION', 255, 1)
-
-        return self.outPacket.getPacket()
-
-    def DHCPACK(self):
+    def DHCPACK(self, requestedIP, FLAGS):
         self.outPacket.resetPacket()
 
         packet_field = {
@@ -198,9 +211,9 @@ class Server:
                         'HOPS' :  0,
                         'XID' : self.inPacket.getField('XID'),
                         'SECS' : 0,
-                        'FLAGS' : int('0x8000', base=16),
+                        'FLAGS' : FLAGS,
                         'CIADDR' : 0,
-                        'YIADDR' : int('0xc0a8881', base=16),
+                        'YIADDR' : requestedIP,
                         'SIADDR' : 0,
                         'GIADDR' : 0,
                         'CHADDR' : self.inPacket.getField('CHADDR'), 
@@ -230,7 +243,7 @@ class Server:
                         0,
                         0,
                         0,
-                        20,
+                        60,
                         54, #DHCP Server
                         4,
                         192,
@@ -238,8 +251,50 @@ class Server:
                         136,
                         134
                         ]
+       
+        #record IP in assigned_IP_table
+        self.assigned_IP_table[ requestedIP ] = [ self.inPacket.getField('CHADDR'), datetime.now()  ]
 
-        index = 0
+        #remove IP from IP pool
+        if requestedIP in self.IP_pool:
+            self.IP_pool.remove( requestedIP )
+
+        return self.constructPacket( packet_field, packet_field_option )
+ 
+    def DHCPNAK(self, FLAGS):
+        self.outPacket.resetPacket()
+
+        packet_field = {
+                        'OP' : 2,
+                        'HTYPE' : 1,
+                        'HLEN' : 6,
+                        'HOPS' :  0,
+                        'XID' : self.inPacket.getField('XID'),
+                        'SECS' : 0,
+                        'FLAGS' : FLAGS,
+                        'CIADDR' : 0,
+                        'YIADDR' : 0,
+                        'SIADDR' : 0,
+                        'GIADDR' : 0,
+                        'CHADDR' : self.inPacket.getField('CHADDR'), 
+                        'SNAME' : 0,
+                        'FILE' :  0,
+                        'MAGIC_COOKIE' : int('0x63825363', base=16)
+                        }
+
+        packet_field_option = [
+                        53, #DHCP Message Type
+                        1,
+                        6,  #DHCPNAK
+                        56, #Message
+                        31 #length
+                        ]
+        message = '7265717565737465642061646472657373206e6f7420617661696c61626c65'
+        for index in range(0, int( len(message) / 2 ) ):
+            packet_field_option.append( int( '0x' + message[ index*2 : index*2+1+1 ], base=16) ) 
+
+        return self.constructPacket( packet_field, packet_field_option )
+    def constructPacket(self, packet_field, packet_field_option):
         for fieldItem in self.outPacket.fieldList:
             if fieldItem != 'OPTION':
                 self.outPacket.setField(fieldItem, packet_field[fieldItem], self.outPacket.fieldSize[fieldItem])
@@ -250,7 +305,7 @@ class Server:
         self.outPacket.setField('OPTION', 255, 1)
 
         return self.outPacket.getPacket()
- 
+        
 
     def decIP_split(self, decIP):
         IP = []
@@ -271,6 +326,29 @@ class Server:
             IP += str( int('0x' + hexIP[ (index+1) * 2 : (index+2)*2 ], base=16) )
 
         return IP
+
+
+    def checkAvailableIP(self):
+        now = datetime.now()
+        for IP, IPinfo in self.assigned_IP_table.items():
+            if (now - IPinfo[1]).seconds > 60:
+                IPinfo[0] = ''
+                IPinfo[1] = ''
+                self.IP_pool.insert( IP )
+
+        if len(self.IP_pool) != 0:
+            return True
+
+        return False
+        
+    def checkIPAvailable(self, IP):
+        self.checkAvailableIP()
+
+        if IP in self.assigned_IP_table:
+            if self.assigned_IP_table[IP][0] != self.inPacket.getField('CHADDR') and self.assigned_IP_table[IP][1] != '':
+                return False
+            
+        return True
 
 if __name__ == "__main__":
     server = Server()

@@ -1,4 +1,4 @@
-import socket, time, sys
+import socket, time, sys, random, argparse
 from datetime import datetime
 
 class DHCP_packet:
@@ -48,31 +48,52 @@ class Client:
         self.submask = ''
         self.router = ''
         self.DNS = ''
+        
+        #generate random MAC
         self.MAC = ''
+        for index in range(12):
+            if random.randint(0, 1):
+                self.MAC += chr( random.randint(48, 57) )
+            else:
+                self.MAC += chr( random.randint(97, 102) )
+        self.MAC = ( int('0x' + self.MAC[0:8], base=16) ).to_bytes(4, byteorder='big') \
+                    + ( int('0x' + self.MAC[8:12] + '0' * 4, base=16) ).to_bytes(4, byteorder='big') \
+                    + (0).to_bytes(8, byteorder='big')
+        self.MAC = int.from_bytes( self.MAC, byteorder='big' )
+
+        #generate random XID
+        self.XID = ''
+        for index in range(8):
+            if random.randint(0, 1):
+                self.XID += chr( random.randint(48, 57) )
+            else:
+                self.XID += chr( random.randint(97, 102) )
+        self.XID = int( '0x' + self.XID, base=16 )
 
         self.inPacket = DHCP_packet()
         self.outPacket = DHCP_packet()
         
-        timeMsg = 'client socket created ({})'.format( datetime.now() )
+        timeMsg = 'client socket created, MAC (CHADDR in dec): {} ({})'.format( self.MAC,  datetime.now() )
         print(timeMsg)
 
-    def process(self):
+    def process(self, port, specifyRequestedIP):
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 
         #sock.bind( ('192.168.136.1' ,68) )
-        sock.bind( ("127.0.0.1" ,20000) )
+        sock.bind( ('192.168.136.1' ,port) )
 
         #sock.connect( ('192.168.136.134', 67) )
 
         #set socket timeout
         sock.settimeout(10)
+
         while True:
             try:
                 #send DHCPDISCOVER
                 data = self.DHCPDISCOVER()
                 print('*** SEND DHCPDISCOVER ***')
-                print(data)
+                #print(data)
 
                 #sock.sendto(data, ('192.168.136.255', 67) )
                 sock.sendto(data, ('255.255.255.255', 67) )
@@ -80,37 +101,77 @@ class Client:
                 #receive DHCPOFFER
                 while True:
                     data, addr = sock.recvfrom(self.BUFSIZE)
-                    #if addr[0] != '192.168.136.134':
-                    #    continue
+                    if addr[0] != '192.168.136.134':
+                        continue
                     print('receive DHCPDISCOVER from {}'.format(addr))
-                    print(data)
+                    #print(data)
                     break
 
                 self.packetAnalysis(data)
 
                 #send DHCPREQUEST
-                data = self.DHCPREQUEST()
+                data = self.DHCPREQUEST( clientIP = 0 ,  FLAGS = int( '0x8000', base=16 ), specifyRequestedIP = specifyRequestedIP )
 
                 print('*** SEND DHCPREQUEST ***')
-                print(data)
+                #print(data)
                 #sock.sendto( data, ('192.168.136.255', 67) )
                 sock.sendto(data, ('255.255.255.255', 67) )
 
                 #receive DHCPACK
                 while True:
                     data, addr = sock.recvfrom(self.BUFSIZE)
-                    #if addr[0] != '192.168.136.134':
-                    #    continue
+                    if addr[0] != '192.168.136.134':
+                        continue
+                    
+                    self.packetAnalysis(data)
+                    
+                    if self.inPacket.getField('OPTION')[53] == 6:
+                        print('receive DHCPNAK from {}'.format(addr))
+                        print(data)
+                        sys.exit()
+                        
                     print('receive DHCPACK from {}'.format(addr))
-                    print(data)
+                    #print(data)
                     break
 
-                self.packetAnalysis(data)
+                
             except socket.timeout:
                 print('timeout, DHCPDISCOVER again')
                 continue
 
             break
+
+        
+        while True:
+            clientIP = self.inPacket.getField('YIADDR')
+            print('get IP : {}'.format( self.decIP_to_string( clientIP ) ) )
+
+            DHCP_serverIP = self.decIP_to_string( self.inPacket.getField('OPTION')[54] )
+            print( 'DHCP_serverIP', DHCP_serverIP )
+            
+            leaseTime = self.inPacket.getField('OPTION')[51]
+            print('lease: {} seconds'.format(leaseTime))
+            time.sleep( leaseTime / 2 )
+
+            #send DHCPREQUEST
+            data = self.DHCPREQUEST( clientIP, FLAGS = 0, specifyRequestedIP = 0 )
+
+            print('*** SEND DHCPREQUEST ***')
+            print(data)
+            #sock.sendto( data, ('192.168.136.255', 67) )
+            sock.sendto(data, (DHCP_serverIP, 67) )
+
+            #receive DHCPACK
+            while True:
+                data, addr = sock.recvfrom(self.BUFSIZE)
+                print(addr[0])
+                if addr[0] != '192.168.136.134':
+                    continue
+                print('receive DHCPACK from {}'.format(addr))
+                print(data)
+                break
+
+            self.packetAnalysis(data)
 
     def packetAnalysis(self, data):
         for fieldItem in self.inPacket.fieldList:
@@ -147,45 +208,46 @@ class Client:
     def DHCPDISCOVER(self):
         self.outPacket.resetPacket()
         
-        self.outPacket.setField('OP', 1, 1)
-        self.outPacket.setField('HTYPE', 1, 1)
-        self.outPacket.setField('HLEN', 6, 1)
-        self.outPacket.setField('HOPS', 0, 1)
-        self.outPacket.setField('XID', int('0x3903F326', base=16), 4)
-        self.outPacket.setField('SECS', 0, 2)
-        self.outPacket.setField('FLAGS', int('0x8000', base=16), 2) #0x8000  : broadcast
-        self.outPacket.setField('CIADDR', 0, 4)
-        self.outPacket.setField('YIADDR', 0, 4)
-        self.outPacket.setField('SIADDR', 0, 4)
-        self.outPacket.setField('GIADDR', 0, 4)
-        self.outPacket.setField('CHADDR', int('0x00053C04', base=16), 4)
-        self.outPacket.setField('CHADDR', int('0x8D590000', base=16), 4)
-        self.outPacket.setField('CHADDR', 0, 8)
-        self.outPacket.setField('SNAME', 0, 64)
-        self.outPacket.setField('FILE', 0, 128)
-        self.outPacket.setField('MAGIC_COOKIE', int('0x63825363', base=16), 4) #DHCP
+        CHADDR_byte = ( int('0x00053C04', base=16) ).to_bytes(4, byteorder='big')
+        CHADDR_byte += ( int('0x8D590000', base=16) ).to_bytes(4, byteorder='big')
+        CHADDR_byte += (0).to_bytes(8, byteorder='big')
+        CHADDR = int.from_bytes(CHADDR_byte, byteorder='big')
 
-        #OPTION 53 : DHCPDISCOVER
-        self.outPacket.setField('OPTION', 53, 1)
-        self.outPacket.setField('OPTION', 1, 1)
-        self.outPacket.setField('OPTION', 1, 1)
-        #OPTION 50 : request
-        self.outPacket.setField('OPTION', 50, 1)
-        self.outPacket.setField('OPTION', 4, 1)
-        self.outPacket.setField('OPTION', 192, 1)
-        self.outPacket.setField('OPTION', 168, 1)
-        self.outPacket.setField('OPTION', 1, 1)
-        self.outPacket.setField('OPTION', 100, 1)
-
-        #OPTION 255 : end
-        self.outPacket.setField('OPTION', 255, 1)
+        packet_field = {
+                        'OP' : 1,
+                        'HTYPE' : 1,
+                        'HLEN' : 6,
+                        'HOPS' :  0,
+                        'XID' : self.XID,
+                        'SECS' : 0,
+                        'FLAGS' : int('0x8000', base=16),   #0x8000  : broadcast
+                        'CIADDR' : 0,
+                        'YIADDR' : 0,
+                        'SIADDR' : 0,
+                        'GIADDR' : 0,
+                        'CHADDR' : self.MAC, 
+                        'SNAME' : 0,
+                        'FILE' :  0,
+                        'MAGIC_COOKIE' : int('0x63825363', base=16) #DHCP
+                        }
         
 
-        data = self.outPacket.getPacket()
+        packet_field_option = [
+                        53, #DHCP Message Type
+                        1,
+                        1,  #DHCPDISCOVER
+                        50,  #Requested IP Address
+                        4,
+                        192,
+                        168,
+                        136,
+                        1
+                        ]
+        
+        return self.constructPacket(packet_field, packet_field_option)
 
-        return data
 
-    def DHCPREQUEST(self):
+    def DHCPREQUEST(self, clientIP, FLAGS, specifyRequestedIP):
         self.outPacket.resetPacket()
 
         packet_field = {
@@ -195,20 +257,23 @@ class Client:
                         'HOPS' :  0,
                         'XID' : self.inPacket.getField('XID'),
                         'SECS' : 0,
-                        'FLAGS' : int('0x8000', base=16),
-                        'CIADDR' : 0,
+                        'FLAGS' : FLAGS,
+                        'CIADDR' : clientIP,
                         'YIADDR' : 0,
                         'SIADDR' : 0,
                         'GIADDR' : 0,
-                        'CHADDR' : self.inPacket.getField('CHADDR'), 
+                        'CHADDR' : self.MAC, 
                         'SNAME' : 0,
                         'FILE' :  0,
                         'MAGIC_COOKIE' : int('0x63825363', base=16)
                         }
 
-        requestedIP = self.decIP_split( self.inPacket.getField('YIADDR') )
+        if specifyRequestedIP == 0:
+            requestedIP = self.decIP_split( self.inPacket.getField('YIADDR') )
+        else:
+            requestedIP = list( map( lambda x: int(x), specifyRequestedIP.split('.') ) )
         DHCP_serverIP = self.decIP_split( self.inPacket.getField('OPTION')[54] )
-        #DHCP_serverIP = self.
+
         packet_field_option = [
                         53, #DHCP Message Type
                         1,
@@ -226,8 +291,11 @@ class Client:
                         DHCP_serverIP[2],
                         DHCP_serverIP[3],
                         ]
+        
+        return self.constructPacket(packet_field, packet_field_option)
 
-        index = 0
+
+    def constructPacket(self, packet_field, packet_field_option):
         for fieldItem in self.outPacket.fieldList:
             if fieldItem != 'OPTION':
                 self.outPacket.setField(fieldItem, packet_field[fieldItem], self.outPacket.fieldSize[fieldItem])
@@ -239,7 +307,6 @@ class Client:
 
         return self.outPacket.getPacket()
 
-
     def decIP_split(self, decIP):
         IP = []
 
@@ -248,10 +315,31 @@ class Client:
             IP.append(int('0x' + hexIP[ (index+1) * 2 : (index+2)*2 ], base=16))
 
         return IP
+
+    def decIP_to_string(self, decIP):
+        IP = ''
+        
+        hexIP = hex(decIP)
+        for index in range(0, 3+1):
+            if IP != '':
+                IP += '.'
+            IP += str( int('0x' + hexIP[ (index+1) * 2 : (index+2)*2 ], base=16) )
+
+        return IP
         
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser('specify socket argument')
+    parser.add_argument('-p', '--port',type=int, default=68,
+                        help='the binding port')
+    parser.add_argument('-IP', default=0,
+                        help='specify requested IP')
+    args = parser.parse_args()
+
+    port = args.port
+    specifyRequestedIP = args.IP
+    
     client = Client()
-    client.process()
+    client.process( port, specifyRequestedIP )
 
     
