@@ -84,6 +84,13 @@ class Server:
                 self.packetAnalysis(data)
 
                 destIP = '255.255.255.255'
+            elif self.inPacket.getField('OPTION')[53] == 7:
+                print('receive DHCPRELEASE packet from {}'.format(addr))
+                releaseIP = self.inPacket.getField('CIADDR')
+                self.IP_pool.append( releaseIP )
+                self.assigned_IP_table[releaseIP][0] = ''
+                self.assigned_IP_table[releaseIP][1] = ''
+                continue
             else:
                 destIP = self.decIP_to_string( self.inPacket.getField('CIADDR') )
 
@@ -294,6 +301,8 @@ class Server:
             packet_field_option.append( int( '0x' + message[ index*2 : index*2+1+1 ], base=16) ) 
 
         return self.constructPacket( packet_field, packet_field_option )
+
+
     def constructPacket(self, packet_field, packet_field_option):
         for fieldItem in self.outPacket.fieldList:
             if fieldItem != 'OPTION':
@@ -331,10 +340,11 @@ class Server:
     def checkAvailableIP(self):
         now = datetime.now()
         for IP, IPinfo in self.assigned_IP_table.items():
-            if (now - IPinfo[1]).seconds > 60:
-                IPinfo[0] = ''
-                IPinfo[1] = ''
-                self.IP_pool.insert( IP )
+            if IPinfo[1] != '':
+                if (now - IPinfo[1]).seconds > 60:
+                    IPinfo[0] = ''
+                    IPinfo[1] = ''
+                    self.IP_pool.append( IP )
 
         if len(self.IP_pool) != 0:
             return True

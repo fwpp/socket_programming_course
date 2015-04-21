@@ -142,7 +142,8 @@ class Client:
             break
 
         
-        while True:
+        #while True:
+        for index in range(2):
             clientIP = self.inPacket.getField('YIADDR')
             print('get IP : {}'.format( self.decIP_to_string( clientIP ) ) )
 
@@ -172,6 +173,9 @@ class Client:
                 break
 
             self.packetAnalysis(data)
+
+        data = self.DHCPRELEASE(clientIP)
+        sock.sendto( data, (DHCP_serverIP, 67) )
 
     def packetAnalysis(self, data):
         for fieldItem in self.inPacket.fieldList:
@@ -291,6 +295,53 @@ class Client:
                         DHCP_serverIP[2],
                         DHCP_serverIP[3],
                         ]
+        
+        return self.constructPacket(packet_field, packet_field_option)
+
+    def DHCPRELEASE(self, clientIP):
+        self.outPacket.resetPacket()
+
+        packet_field = {
+                        'OP' : 1,
+                        'HTYPE' : 1,
+                        'HLEN' : 6,
+                        'HOPS' :  0,
+                        'XID' : self.inPacket.getField('XID'),
+                        'SECS' : 0,
+                        'FLAGS' : int( '0x8000', base=16 ),
+                        'CIADDR' : clientIP,
+                        'YIADDR' : 0,
+                        'SIADDR' : 0,
+                        'GIADDR' : 0,
+                        'CHADDR' : self.MAC, 
+                        'SNAME' : 0,
+                        'FILE' :  0,
+                        'MAGIC_COOKIE' : int('0x63825363', base=16)
+                        }
+
+        if specifyRequestedIP == 0:
+            requestedIP = self.decIP_split( self.inPacket.getField('YIADDR') )
+        else:
+            requestedIP = list( map( lambda x: int(x), specifyRequestedIP.split('.') ) )
+        DHCP_serverIP = self.decIP_split( self.inPacket.getField('OPTION')[54] )
+
+        packet_field_option = [
+                        53, #DHCP Message Type
+                        1,
+                        7,  #DHCPRELEASE
+                        54,  #DHCP Server Identifier
+                        4,
+                        DHCP_serverIP[0],
+                        DHCP_serverIP[1],
+                        DHCP_serverIP[2],
+                        DHCP_serverIP[3],
+                        61,   #Client identifier
+                        7,
+                        1,
+                        ]
+        #MAC
+        for index in range(6):
+            packet_field_option.append( int( '0x' + hex(self.MAC)[2:][index*2:index*2+1+1], base=16 ) )
         
         return self.constructPacket(packet_field, packet_field_option)
 
