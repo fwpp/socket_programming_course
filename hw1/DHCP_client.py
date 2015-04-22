@@ -144,35 +144,38 @@ class Client:
         
         #while True:
         for index in range(2):
-            clientIP = self.inPacket.getField('YIADDR')
-            print('get IP : {}'.format( self.decIP_to_string( clientIP ) ) )
+            try:
+                clientIP = self.inPacket.getField('YIADDR')
+                print('get IP : {}'.format( self.decIP_to_string( clientIP ) ) )
 
-            DHCP_serverIP = self.decIP_to_string( self.inPacket.getField('OPTION')[54] )
-            print( 'DHCP_serverIP', DHCP_serverIP )
-            
-            leaseTime = self.inPacket.getField('OPTION')[51]
-            print('lease: {} seconds'.format(leaseTime))
-            time.sleep( leaseTime / 2 )
+                DHCP_serverIP = self.decIP_to_string( self.inPacket.getField('OPTION')[54] )
+                print( 'DHCP_serverIP', DHCP_serverIP )
+                
+                leaseTime = self.inPacket.getField('OPTION')[51]
+                print('lease: {} seconds'.format(leaseTime))
+                time.sleep( leaseTime / 2 )
 
-            #send DHCPREQUEST
-            data = self.DHCPREQUEST( clientIP, FLAGS = 0, specifyRequestedIP = 0 )
+                #send DHCPREQUEST
+                data = self.DHCPREQUEST( clientIP, FLAGS = 0, specifyRequestedIP = 0 )
 
-            print('*** SEND DHCPREQUEST ***')
-            print(data)
-            #sock.sendto( data, ('192.168.136.255', 67) )
-            sock.sendto(data, (DHCP_serverIP, 67) )
-
-            #receive DHCPACK
-            while True:
-                data, addr = sock.recvfrom(self.BUFSIZE)
-                print(addr[0])
-                if addr[0] != '192.168.136.134':
-                    continue
-                print('receive DHCPACK from {}'.format(addr))
+                print('*** SEND DHCPREQUEST ***')
                 print(data)
-                break
+                #sock.sendto( data, ('192.168.136.255', 67) )
+                sock.sendto(data, (DHCP_serverIP, 67) )
 
-            self.packetAnalysis(data)
+                #receive DHCPACK
+                while True:
+                    data, addr = sock.recvfrom(self.BUFSIZE)
+                    if addr[0] != '192.168.136.134':
+                        continue
+                    print('receive DHCPACK from {}'.format(addr))
+                    print(data)
+                    break
+
+                self.packetAnalysis(data)
+            except socket.timeout:
+                print('timeout')
+                sys.exit()
 
         data = self.DHCPRELEASE(clientIP)
         sock.sendto( data, (DHCP_serverIP, 67) )
