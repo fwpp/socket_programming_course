@@ -15,3 +15,23 @@ client woud send RELEASE to release IP
 	testing environment
 windows 7 (client)
 ubuntu 14.04 (server) in VMware
+
+
+
+	--- hw1 DHCP ---
+command mode
+	- listuser
+	- logout
+	- send username message
+	- broadcast message
+
+chatting mode
+	- talk username
+
+server
+	- authenticate username and password
+	- provide left message service
+
+
+	testing environment
+windows 7 (client , server)
