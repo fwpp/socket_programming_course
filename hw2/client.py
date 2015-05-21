@@ -76,14 +76,36 @@ if __name__ == "__main__":
 		5 : talk
 		6 : broadcast
 		7 : fetchMsg
+		8 : register
 		
 	response:
 		code:
 		200: OK
 		403: forbidden
+		900: username has been registered
 	"""
 	
+	#register
+	registerYN = input("Do you have an account ? (input yes to login, no to register)")
+	while registerYN == "no":
+		username = input("enter username: ")
+		password = input("enter password: ")
+		password2 = input("confirm password: ")
+		if password != password2:
+			print("Error: There is difference between password and password of confirmation")
+			continue
+		request = createPacket({'action':8,'username':username,'password':password})
+		sock.send(request)
+		response = parsePacket(sock.recv(100))
+		if response['code'] == 200:
+			print("register successfully")
+			break
+		else:
+			print('username has been registered')
+		
+	
 	#login
+	print("Login:")
 	while True:
 		username = input("enter username :")
 		password  = getpass();
