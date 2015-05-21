@@ -18,7 +18,7 @@ ubuntu 14.04 (server) in VMware
 
 
 
-	--- hw1 DHCP ---
+	--- hw2 messager ---
 command mode
 	- listuser
 	- logout
@@ -31,7 +31,9 @@ chatting mode
 server
 	- authenticate username and password
 	- provide left message service
-
+	- md5 hash password and authenticate
+	- bakup user info in period
+	- provide register service
 
 	testing environment
 windows 7 (client , server)
