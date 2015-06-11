@@ -37,3 +37,21 @@ server
 
 	testing environment
 windows 7 (client , server)
+
+
+	--- hw2 messager ---
+support TLS connection
+login and logout
+post board (post new post)
+profile (edit profile)
+register : create new user
+password is hash with md5 and extra key
+auth : authenticate before enter any page of main
+ajax to check whether there is new post
+search posts
+
+	testing environment
+windows 7
+framework : django           ( installation : pip install 'django<1.8' )
+sslserver : django-sslserver ( installation : pip install django-sslserver )
+

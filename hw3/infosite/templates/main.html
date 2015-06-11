@@ -1,0 +1,95 @@
+<!DOCYTYPE>
+<html>
+	<head>
+		<style>
+			.pannel {
+				text-align: center;
+			}
+			
+			.pannel form table {
+				margin: 0 auto;
+			}
+		
+			label {
+				display: block;
+			}
+			
+			.new_post div {
+				margin-top: 10px;
+			}
+			
+			.post {
+				background-color: #CCFFCC;
+				margin-top: 5px;
+			}
+			
+			a {
+				text-decoration: none;
+			}
+			
+			.top_row {
+				text-align: right;
+			}
+		</style>
+		<script src="https://code.jquery.com/jquery-2.1.4.min.js"></script>
+		<script>
+			$(document).ready(function(){
+				var oldTime = new Date();
+				setInterval(function(){
+					$.ajax({
+						url: "https://127.0.0.1:8000/main/ajax_check_new_post/?oldTime="+oldTime.getTime(),
+						dataType: 'json',
+					}).done(function(data){
+						var change = data['change'];
+						
+						if( change == true ){
+							$('#new_post_msg').html("<span>There are " + data['amount'] + ' new posts.<span>&nbsp;&nbsp;<a href=\"https://127.0.0.1:8000/\">refresh</a>');
+						}
+					});
+				}, 10000);
+			});
+		</script>
+	</head>
+	<body>
+		<div class="top_row">
+			<a href="https://127.0.0.1:8000/main/profile/">Profile</a>
+			<a href="https://127.0.0.1:8000/main/logout/">Logout</a>
+		</div>
+		<div class="pannel">
+			<form method="POST" class="new_post" action="https://127.0.0.1:8000/main/post_create/">
+				{% csrf_token %}
+				<h1>New Post</h1>
+				<div>
+					<label for="title">Title</label>
+					<input type="text" id="title" name="title" size="33" required />
+				</div>
+				<div>
+					<label for="content">Content</label>
+					<textarea id="content" name="content" rows="5" cols="30" required></textarea>
+				</div>
+				<div>
+					<input type="submit" value="post" />
+				</div>
+			</form>
+		</div>
+		
+		<div>
+			<form method="POST" action="https://127.0.0.1:8000/main/search_post/">
+				{% csrf_token %}
+				<input type="text" id="search" name="search" />
+				<input type="submit" value="search" />
+			</form>
+		</div>
+		
+		<div class="pannel">
+			<section id="new_post_msg"></section>
+			{% for post in posts %}
+				<div class="post">
+					<div>{{ post.title }}</div>
+					<div>{{ post.content }}</div>
+					<div>-- by {{ post.author }} {{ post.created_at }}</div>
+				</div>
+			{% endfor %}
+		</div>
+	</body>
+</html>

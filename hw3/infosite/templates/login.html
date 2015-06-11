@@ -1,0 +1,40 @@
+<!DOCYTYPE>
+<html>
+	<head>
+		<style>
+			.pannel {
+				text-align: center;
+			}
+			
+			.pannel form table {
+				margin: 0 auto;
+			}
+			
+			a {
+				text-decoration: none;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="pannel">
+			<h1>Login</h1>
+			<form method="POST" action="https://127.0.0.1:8000/login_check/">
+				{% csrf_token %}
+				<table>
+					<thead>
+						{% if error %}
+							<tr><td colspan="2" style="color: red;">{{ error }}</td></tr>
+						{% endif %}
+					</thead>
+					<tbody>
+						<tr><td>Account</td><td><input type="text" id="account" name="account" required /></td></tr>
+						<tr><td>Password</td><td><input type="password" id="password" name="password" required /></td></tr>
+					</tbody>
+					<tfoot>
+						<tr><td><input type="submit" value="login" /></td><td><a href="register/">register</a></td></tr>
+					</tfoot>
+				</table>
+			</form>
+		</div>
+	</body>
+</html>
